@@ -23,6 +23,7 @@ def create_spark_session():
 
 
 def process_song_data(spark, input_data, output_data):
+    
     # get filepath to song data file
     song_data = os.path.join(input_data, "song_data")
 
@@ -43,7 +44,7 @@ def process_song_data(spark, input_data, output_data):
     df = spark.read.json(f'{song_data}/*/*/*/*.json', multiLine=True, schema=song_schema)
 
     # extract columns to create songs table
-    songs_table = df.filter(df.song_id.isNotNull()).select("song_id", "title", "artist_id", "year", "duration").distinct()
+    songs_table = df.filter(df.song_id.isNotNull()).select("song_id", "title", "artist_id", "artist_name", "year", "duration").distinct()
     
     # write songs table to parquet files partitioned by year and artist
     songs_table.write.parquet(f"{output_data}/songs_table/", mode='overwrite', partitionBy=('year', 'artist_id'))
@@ -64,7 +65,7 @@ def process_log_data(spark, input_data, output_data):
     log_data = os.path.join(input_data, "log_data")
 
     # read log data file
-    log_df = spark.read.json(f"{log_data}/*.json")
+    log_df = spark.read.json(f"{log_data}/*/*/*.json")
 
     # Parse timestamp column to get start_time
     log_df = log_df.withColumn("start_time", F.from_unixtime(F.col("ts")/1000).alias("start_time"))
@@ -100,10 +101,11 @@ def process_log_data(spark, input_data, output_data):
     song_df = song_df.withColumn("artist_name_cleaned", F.lower(F.trim(F.col("artist_name"))))
     song_df = song_df.withColumn("title_cleaned", F.lower(F.trim(F.col("title"))))
 
-    cond = [log_df.artist_cleaned==df.artist_name_cleaned, log_df.song_cleaned == df.title_cleaned, og_df.length == df.duration]
+    cond = [log_df.artist_cleaned==song_df.artist_name_cleaned,\
+            log_df.song_cleaned == song_df.title_cleaned, log_df.length == df.duration]
 
     # extract columns from joined song and log datasets to create songplays table 
-    songplays_table = log_df.join(df, cond).filter(F.col("page")=="NextSong")\
+    songplays_table = log_df.join(song_df, cond).filter(F.col("page")=="NextSong")\
                             .select(F.monotonically_increasing_id().alias("songplay_id"), "start_time",
                             "userId", "level", "song_id", "artist_id", "sessionId",
                             "location", "userAgent",
@@ -117,7 +119,7 @@ def process_log_data(spark, input_data, output_data):
 def main():
     spark = create_spark_session()
     input_data = "s3a://udacity-dend/"
-    output_data = "s3a://datalake_etl_output"
+    output_data = "s3a://datalake-etl-output"
     
     process_song_data(spark, input_data, output_data)    
     process_log_data(spark, input_data, output_data)
